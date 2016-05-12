@@ -793,3 +793,15 @@ def plot_lenet(learning_rate=0.1, n_epochs=200,nkerns=[20, 50], batch_size=500,v
     
     
     plt.savefig('Lenet_kern2.png')
+    
+    
+    
+    abctemp = abc[6].get_value()
+    plt.figure(4)
+    for i in range(0,9):
+        plt.subplot(3,3,i+1)
+        mg3 = plt.imshow( abctemp[i,0,:,:] ,interpolation="nearest")
+        mg3.set_cmap('Greys')
+    
+    
+    plt.savefig('Lenet_filt.png')
