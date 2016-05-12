@@ -7,10 +7,11 @@ import theano
 import theano.tensor as T
 from theano.tensor.signal import downsample
 
+import matplotlib.pyplot as plt
+
 from project_utils import shared_dataset,load_mnist
 from project_nn import LogisticRegression,HiddenLayer,MLP,myMLP,LeNetConvPoolLayer
 
-#, GALayer, HiddenLayer, myMLP, LeNetConvPoolLayer, train_nn, Fig3Layer
 
 def test_logistic(learning_rate=0.15, n_epochs=1000, ds_rate=1, batch_size=200, verbose=False,savemodel=True):
     """
@@ -598,3 +599,197 @@ def test_lenet(learning_rate=0.1, n_epochs=200,nkerns=[20, 50], batch_size=500,v
            os.path.split(__file__)[1] +
            ' ran for %.2fm' % ((end_time - start_time) / 60.)))
     
+    
+def plot_mlp():
+    
+    datasets = load_mnist()
+
+    train_set_x, train_set_y = datasets[0]
+    valid_set_x, valid_set_y = datasets[1]
+    test_set_x, test_set_y = datasets[2]
+    
+    batch_size=20
+    
+    # compute number of minibatches for training, validation and testing
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0] // batch_size
+    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] // batch_size
+    n_test_batches = test_set_x.get_value(borrow=True).shape[0] // batch_size
+
+    ######################
+    # BUILD ACTUAL MODEL #
+    ######################
+    print('... building the model')
+
+    # allocate symbolic variables for the data
+    index = T.lscalar()  # index to a [mini]batch
+    x = T.matrix('x')  # the data is presented as rasterized images
+    y = T.ivector('y')  # the labels are presented as 1D vector of
+                        # [int] labels
+
+    rng = numpy.random.RandomState(1234)
+
+    # construct the MLP class
+    classifier = myMLP(
+        rng=rng,
+        input=x,
+        n_in=28 * 28,
+        n_hidden=500,
+        n_out=10,
+        n_hiddenLayers=1
+    )
+
+    f = open('best_mlpnl1.pkl','rb')
+    par = pickle.load( f ) 
+    f.close()
+    #classifier.params = par
+    
+    # compiling a Theano function that computes the mistakes that are made
+    # by the model on a minibatch
+    test_model = theano.function(
+        inputs=[index],
+        outputs=classifier.errors(y),
+        givens={
+            x: test_set_x[index * batch_size:(index + 1) * batch_size],
+            y: test_set_y[index * batch_size:(index + 1) * batch_size]
+        }
+    )
+
+
+def plot_lenet(learning_rate=0.1, n_epochs=200,nkerns=[20, 50], batch_size=500,verbose=True,savemodel=True):
+    rng = numpy.random.RandomState(23455)
+
+    datasets = load_mnist()
+
+    train_set_x, train_set_y = datasets[0]
+    valid_set_x, valid_set_y = datasets[1]
+    test_set_x, test_set_y = datasets[2]
+
+    
+    # compute number of minibatches for training, validation and testing
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0]
+    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+    n_test_batches = test_set_x.get_value(borrow=True).shape[0]
+    n_train_batches //= batch_size
+    n_valid_batches //= batch_size
+    n_test_batches //= batch_size
+
+    # allocate symbolic variables for the data
+    index = T.lscalar()  # index to a [mini]batch
+    
+    x = T.matrix('x')   # the data is presented as rasterized images
+    y = T.ivector('y')  # the labels are presented as 1D vector of
+                        # [int] labels
+
+    ######################
+    # BUILD ACTUAL MODEL #
+    ######################
+    print('building...')
+
+    # Reshape matrix of rasterized images of shape (batch_size, 28 * 28)
+    # to a 4D tensor, compatible with our LeNetConvPoolLayer
+    # (28, 28) is the size of MNIST images.
+    layer0_input = x.reshape((batch_size, 1, 28, 28))
+
+    # Construct the first convolutional pooling layer:
+    # filtering reduces the image size to (28-5+1 , 28-5+1) = (24, 24)
+    # maxpooling reduces this further to (24/2, 24/2) = (12, 12)
+    # 4D output tensor is thus of shape (batch_size, nkerns[0], 12, 12)
+    layer0 = LeNetConvPoolLayer(
+        rng,
+        input=layer0_input,
+        image_shape=(batch_size, 1, 28, 28),
+        filter_shape=(nkerns[0], 1, 5, 5),
+        poolsize=(2, 2)
+    )
+
+    # Construct the second convolutional pooling layer
+    # filtering reduces the image size to (12-5+1, 12-5+1) = (8, 8)
+    # maxpooling reduces this further to (8/2, 8/2) = (4, 4)
+    # 4D output tensor is thus of shape (batch_size, nkerns[1], 4, 4)
+    layer1 = LeNetConvPoolLayer(
+        rng,
+        input=layer0.output,
+        image_shape=(batch_size, nkerns[0], 12, 12),
+        filter_shape=(nkerns[1], nkerns[0], 5, 5),
+        poolsize=(2, 2)
+    )
+
+    # the HiddenLayer being fully-connected, it operates on 2D matrices of
+    # shape (batch_size, num_pixels) (i.e matrix of rasterized images).
+    # This will generate a matrix of shape (batch_size, nkerns[1] * 4 * 4),
+    # or (500, 50 * 4 * 4) = (500, 800) with the default values.
+    layer2_input = layer1.output.flatten(2)
+
+    # construct a fully-connected sigmoidal layer
+    layer2 = HiddenLayer(
+        rng,
+        input=layer2_input,
+        n_in=nkerns[1] * 4 * 4,
+        n_out=500,
+        activation=T.tanh
+    )
+
+    # classify the values of the fully-connected sigmoidal layer
+    layer3 = LogisticRegression(input=layer2.output, n_in=500, n_out=10)
+
+
+    
+    #params = layer3.params + layer2.params + layer1.params + layer0.params
+    
+    f = open('best_lenet.pkl' , 'rb' )
+    abc = pickle.load(f)
+    f.close()
+    
+    
+    # create a function to compute the mistakes that are made by the model
+    t_model = theano.function(
+        [index],
+        outputs = [layer3.errors(y),layer0.output,layer1.output],
+        givens={
+            x: test_set_x[index * batch_size: (index + 1) * batch_size],
+            y: test_set_y[index * batch_size: (index + 1) * batch_size],
+            layer3.W : abc[0],
+            layer3.b : abc[1],
+            layer2.W : abc[2],
+            layer2.b : abc[3],
+            layer1.W : abc[4],
+            layer1.b : abc[5],
+            layer0.W : abc[6],
+            layer0.b : abc[7]           
+        }
+    )
+    
+    
+    print('end')
+    a,b,c = t_model(1)
+    print(a.shape)
+    print(b.shape)
+    print(c.shape)
+    
+    
+    temp = load_mnist(theano_shared=False)
+    tempx,tempy = temp[2]
+    
+    
+    plt.figure(1)
+    mg2 =plt.imshow( numpy.reshape(tempx[1,:] , (28,28) ) )
+    mg2.set_cmap('Greys')
+    plt.savefig('lenetimage.png')
+    
+    plt.figure(2)
+    
+    for i in range(0,9):
+        plt.subplot(3,3,i+1)
+        mg = plt.imshow( b[0,i,:,:],interpolation="nearest" )
+        mg.set_cmap('Greys')
+    
+    plt.savefig('Lenet_kern.png')
+    
+    plt.figure(3)
+    for i in range(0,16):
+        plt.subplot(4,4,i+1)
+        mg3 = plt.imshow( b[0,i,:,:] ,interpolation="nearest")
+        mg3.set_cmap('Greys')
+    
+    
+    plt.savefig('Lenet_kern2.png')
