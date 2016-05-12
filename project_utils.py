@@ -8,8 +8,8 @@ import cPickle
 
 def shared_dataset(data_xy, borrow=True):    
     data_x, data_y = data_xy
-    shared_x = theano.shared(data_x.astype(float),borrow=borrow)
-    shared_y = theano.shared(data_y.astype(float),borrow=borrow)
+    shared_x = theano.shared(data_x.astype(numpy.float32),borrow=borrow)
+    shared_y = theano.shared(data_y.astype(numpy.float32),borrow=borrow)
     # When storing data on the GPU it has to be stored as floats
     # therefore we will store the labels as ``floatX`` as well
     # (``shared_y`` does exactly that). But during our computations
